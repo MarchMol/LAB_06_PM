@@ -1,9 +1,11 @@
 package com.example.lab_06_pm
 
+import android.app.Activity
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -12,6 +14,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -27,10 +31,19 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.lifecycle.Observer
 import androidx.lifecycle.ViewModelProvider
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import com.example.lab_06_pm.api.RetrofitInstance
 import com.example.lab_06_pm.api.SimpleAPI
 import com.example.lab_06_pm.model.Post
+import com.example.lab_06_pm.model.Ua_item
 import com.example.lab_06_pm.repository.Repository
 import com.example.lab_06_pm.ui.theme.LAB_06_PMTheme
 import org.json.JSONObject
@@ -53,12 +66,7 @@ class MainActivity : ComponentActivity() {
 
         val repository = Repository()
         val viewModelFactory = MainViewModelFactory(repository)
-        viewModel = ViewModelProvider(this,viewModelFactory).get(MainViewModel::class.java)
-        viewModel.getPost()
-        viewModel.myResponse.observe(this, Observer{ response ->
-            Log.d("Response",response.name)
-            Log.d("Response",response.href)
-        })
+        val viewModel = ViewModelProvider(this,viewModelFactory).get(MainViewModel::class.java)
 
 
 
@@ -69,116 +77,85 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    Greeting(listOf("1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16"))
+                    Greeting(viewModel, this)
                 }
             }
+        }
+    }
+}
+
+
+@Composable
+fun Greeting(viewModel: MainViewModel, activity: MainActivity) {
+    var UrbanAreas = getUrbanAreas(viewModel, activity)
+
+    LazyColumn(){
+        items(items = UrbanAreas){ area ->
+            CustomArea(viewModel,activity,area)
         }
     }
 }
 
 @Composable
-fun Greeting(items: List<String>) {
-
-    Column (modifier = Modifier.verticalScroll(rememberScrollState())){
-        items.forEach { text ->
-            var isSelected by remember { mutableStateOf(true) }
-            Text(
-
-                text = text,
-                modifier = Modifier
-
-                    .clickable {
-                        isSelected = !isSelected
-                        // Add your onClick logic here
-                    }
-                    .padding(16.dp)
-                    .background(if (isSelected) Color.Gray else Color.Transparent)
-                    .fillMaxWidth(),
-                fontSize = 20.sp
-            )
+fun getUrbanAreas(viewModel: MainViewModel,activity:MainActivity): SnapshotStateList<Ua_item>{
+    var UrbanAreas = remember { mutableStateListOf<Ua_item>()}
+    viewModel.getPost()
+    viewModel.myResponse.observe(activity, Observer{ response ->
+        Log.d("Response",response.body()?.Links?.ua_item.toString())
+        response.body()?.Links?.ua_item?.forEach {
+            UrbanAreas.add(it)
         }
-    }
+    })
+    return UrbanAreas
 }
 
-fun conectionFun():String{
-    var result: String = ""
-    var connection: HttpURLConnection? = null
-    var httpResult:Int =0
+@Composable
+fun getImageHref(name:String,viewModel: MainViewModel,activity:MainActivity,uaLocator:String): String {
 
-    try{
-        val url = URL("https://api.teleport.org/api/urban_areas/")
-        connection = url.openConnection() as HttpURLConnection
-
-        connection.doOutput = true
-        connection.doInput = true
-        connection.instanceFollowRedirects = false
-        connection.requestMethod = "GET"
-        connection.setRequestProperty("Content-Type", "application/json")
-        connection.setRequestProperty("charset", "utf-8")
-        connection.setRequestProperty("Accept", "application/json")
-        connection.useCaches = false
+    var imageHref:String by remember{ mutableStateOf("")}
+    viewModel.getPost2(uaLocator)
+    viewModel.myResponseHref.observe(activity, Observer{ response ->
+        Log.d("Response image link "+name,response.body()?.photos?.toString()!!)
+        imageHref = response.body()?.photos?.get(0)?.image?.mobile.toString()
+    })
+    return imageHref
+}
 
 
-        httpResult = connection.responseCode
+@Composable
+fun CustomArea(viewModel: MainViewModel,activity:MainActivity,area:Ua_item) {
+    var isSelected by remember { mutableStateOf(false) }
+    var uaLocator:String= area.href?.replace("https://api.teleport.org/api/urban_areas/","").toString()
+    var imageHref by remember { mutableStateOf("") }
 
-        if (httpResult == HttpURLConnection.HTTP_OK) {
+    Text(
+        text = area.name!!,
+        modifier = Modifier
 
-            val inputStream = connection.inputStream
-
-            val reader = BufferedReader(InputStreamReader(inputStream))
-            val sb = StringBuilder()
-            var line: String?
-            try {
-                while (reader.readLine().also { line = it } != null) {
-                    sb.append(line + "\n")
-                }
-            } catch (e: IOException) {
-                e.printStackTrace()
-            } finally {
-                try {
-
-                    inputStream.close()
-                } catch (e: IOException) {
-                    e.printStackTrace()
-                }
+            .clickable {
+                isSelected = !isSelected
+                // Add your onClick logic here
             }
-            result = sb.toString()
-        } else {
-
-            result = connection.responseMessage
-        }
-
-    } catch (e: IOException) {
-    e.printStackTrace()
-    }
-
-
-    return result
-
-}
-
-
-fun getCities(){
-    val retrofit = Retrofit.Builder()
-        .baseUrl("https://api.teleport.org")
-        .addConverterFactory(GsonConverterFactory.create())
-        .build()
-
-    val API = retrofit.create(SimpleAPI::class.java)
-    val ListCiudades = mutableListOf<Post>()
-
-    try{
-        val call = API.getPost()
-        val response = call.execute()
-    } catch(e: Exception){
-
+            .padding(16.dp)
+            .background(if (isSelected) Color.Gray else Color.Transparent)
+            .fillMaxWidth(),
+        fontSize = 20.sp
+    )
+    if (isSelected){
+        imageHref = getImageHref(area.name!!,viewModel, activity, uaLocator)
+        AsyncImage(
+            model = imageHref,
+            contentDescription = "Image"
+        )
     }
 }
-
 @Preview(showBackground = true)
 @Composable
 fun GreetingPreview() {
+    val repository = Repository()
+    val viewModelFactory = MainViewModelFactory(repository)
+    //val viewModel = ViewModelProvider(this,viewModelFactory).get(MainViewModel::class.java)
     LAB_06_PMTheme {
-        Greeting(listOf("hola","como","estas","Pues","Si"))
+        //Greeting(viewModel,this)
     }
 }
